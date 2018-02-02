@@ -68,18 +68,24 @@ setup_container() {
 }
 
 build_package() {
+    set +e
     START=$(date +%s)
+    
     lxc exec "$NAME" -- sh -c "cd $PACKAGE-*/ && dpkg-buildpackage -j4 -us -uc" &> "$LOG_DIR/$PACKAGE.log"
+    
     echo $? > "$LOG_DIR/$PACKAGE.result"
+
     END=$(date +%s)
     echo $((END-START)) > "$LOG_DIR/$PACKAGE.time"
+
+    set -e
 }
 
 
 if [ -d "$LOG_DIR" ]; then
     rm -rf "$LOG_DIR"
 fi
-mkdir "$LOG_DIR"
+mkdir -p "$LOG_DIR"
 
 trap cleanup EXIT
 

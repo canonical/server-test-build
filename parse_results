@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Parse results of build packages script.
+
+Copyright 2017 Canonical Ltd.
+Joshua Powers <josh.powers@canonical.com>
+"""
+import argparse
+import fnmatch
+import os
+
+RESULTS_FILENAME = 'results.xml'
+
+
+def recursive_glob(search_dir, regex):
+    """Search recursively for files matching a specified pattern.
+
+    @param search_dir: directory to recursivly search
+    @param regex: regular expression used to find files
+    @return_value: sorted list of files matching the regular expression
+    """
+    matches = []
+    for root, _, filenames in os.walk(search_dir):
+        for filename in fnmatch.filter(filenames, regex):
+            matches.append(os.path.join(root, filename))
+
+    return sorted(matches)
+
+def read_result(log_path):
+    """Read first line of file and return result.
+
+    @param log_path: directory to read the first line
+    @return_value: string with newline stripped
+    """
+    with open(log_path, 'r') as log:
+        return log.readline().rstrip()
+
+def print_results(results):
+    """Print results to junit xml file.
+
+    @param results: dictionary of packagename = result
+    """
+    header = '<testsuite tests="%s">' % len(results)
+    footer = '</testsuite>'
+    content = ''
+
+    for package, return_code in results.items():
+        print('%s, %s' % (package, return_code))
+        if return_code == "-1":
+            content += ('\t<testcase classname="%s" name="build">\n'
+                        '\t\t<skipped />\n'
+                        '\t</testcase>\n' % package)
+        elif return_code == "0":
+            content += '\t<testcase classname="%s" name="build"/>\n' % package
+        else:
+            content += ('\t<testcase classname="%s" name="build">\n'
+                        '\t\t<failure type="BuildFailure">%s</failure>\n'
+                        '\t</testcase>\n' % (package, return_code))
+
+    with open(RESULTS_FILENAME, 'w') as out:
+        out.write('%s\n%s%s\n' % (header, content, footer))
+
+def main(directory):
+    """Recursively read directory and print results to junit xml file."""
+    results = {}
+    for log_path in recursive_glob(directory, r'*.result'):
+        package = log_path.split('/')[-1].split('.')[0]
+        result = read_result(log_path)
+        results[package] = result
+
+    print_results(results)
+
+if __name__ == '__main__':
+    PARSER = argparse.ArgumentParser()
+    PARSER.add_argument('--dir', default='logs',
+                        help='Directory name with logs to parse')
+    ARGS = PARSER.parse_args()
+
+main(ARGS.dir)

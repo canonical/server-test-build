@@ -4,9 +4,11 @@
 # Used to test that packages in the archive are still buildable and do
 # not fail to build (FTBFS).
 #
-# Copyright 2017 Canonical Ltd.
+# Copyright 2018 Canonical Ltd.
 # Joshua Powers <josh.powers@canonical.com>
 set -eu
+
+APT_CMD="DEBIAN_FRONTEND=noninteractive apt-get --assume-yes"
 
 error() { echo "$@" 1>&2; }
 
@@ -31,39 +33,13 @@ cleanup() {
     fi
 }
 
-exec_container() {
-    local name=$1
-    shift
-    lxc exec "$name" -- "$@"
-}
-
-launch_container() {
-    local name=$1 release=$2
-    shift 2
-
-    if [ "$(lxc list "$name" --columns n --format=csv)" == "$name" ]; then
-        lxc delete --force "$name"
-    fi
-
-    lxc launch ubuntu-daily:"$release" "$name" ||
-        error "Failed to start '$release' container named '$name'"
-
-    check_networking
-
-    exec_container "$name" sh -c "apt-get update"
-    exec_container "$name" sh -c "DEBIAN_FRONTEND=noninteractive apt-get upgrade --assume-yes"
-    exec_container "$name" sh -c "DEBIAN_FRONTEND=noninteractive apt-get install --assume-yes ubuntu-dev-tools"
-
-    lxc snapshot "$name" base_image
-}
-
 check_networking(){
-    exec_container "$NAME" sh -c '
+    exec_container sh -c '
         i=0
         while [ $i -lt 60 ]; do
             getent hosts archive.ubuntu.com && exit 0
             sleep 2
-        done' 2>&1
+        done'
 
     ret=$?
     if [ "$ret" -ne 0 ]; then
@@ -71,34 +47,45 @@ check_networking(){
     fi
 }
 
-setup_container() {
-    local name=$1 package=$2 release=$3
-    shift 3
-
-    lxc restore "$name" base_image
-
-    check_networking
-
-    exec_container "$name" pull-lp-source "$package" "$release"
-    exec_container "$name" apt-get update
-    exec_container "$name" sh -c "DEBIAN_FRONTEND=noninteractive apt-get build-dep --assume-yes $package"
+exec_container() {
+    lxc exec "$NAME" -- "$@" >/dev/null 2>&1
+    return $?
 }
 
+launch_container() {
+    if [ "$(lxc list "$NAME" --columns n --format=csv)" == "$NAME" ]; then
+        lxc delete --force "$NAME"
+    fi
+
+    lxc launch ubuntu-daily:"$RELEASE" "$NAME" ||
+        error "Failed to start '$RELEASE' container named '$NAME'"
+
+    check_networking "$NAME"
+
+    echo 'Upgrading and installing ubuntu-dev-tools'
+    exec_container sh -c "$APT_CMD update"
+    exec_container sh -c "$APT_CMD upgrade"
+    exec_container sh -c "$APT_CMD install ubuntu-dev-tools"
+
+    lxc snapshot "$NAME" base_image
+}
+
+
 build_package() {
-    local name=$1 package=$2 log_dir=$3
-    shift 3
+    local package=$1
+    shift
+
+    exec_container sh -c "$APT_CMD update"
+    exec_container sh -c "$APT_CMD build-dep $package"
 
     set +e
     START=$(date +%s)
-    
-    lxc exec "$name" -- sh -c "cd $package-*/ && dpkg-buildpackage -j4 -us -uc" &> "$log_dir/$package.log"
-    
-    echo $? > "$log_dir/$package.result"
-
+    lxc exec "$NAME" -- sh -c "cd $package-*/ && dpkg-buildpackage -j4 -us -uc" &> "$LOG_DIR/$package.log"
+    echo $? > "$LOG_DIR/$package.result"
     END=$(date +%s)
-    echo $((END-START)) > "$log_dir/$package.time"
-
     set -e
+
+    echo $((END-START)) > "$LOG_DIR/$package.time"
 }
 
 main () {
@@ -107,8 +94,7 @@ main () {
     local getopt_out=""
     local getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
-        eval set -- "${getopt_out}" ||
-        { bad_Usage; return; }
+        eval set -- "${getopt_out}" || bad_usage
 
     local cur=""
     local next=""
@@ -122,30 +108,47 @@ main () {
             shift;
     done
 
-    [ $# -gt 1 ] || bad_usage "error: must provide at least a release and one source package"
+    # Program starts here
+    [ $# -gt 1 ] ||
+        bad_usage "error: must provide a release and at least one package"
+        
+    DATE=$(date +%Y%m%d-%H%m%S)
+    RELEASE=$1; shift
+    NAME=build-$RELEASE-$DATE
+    LOG_DIR=logs/$RELEASE-$DATE
 
-    release=$1; shift
-    SUPPORTED_RELEASES=($(distro-info --supported | tr '\r\n' ' '))
-    if [[ ! " ${SUPPORTED_RELEASES[@]} " =~ " ${release} " ]]; then
-        bad_usage "error: not a supported release"
+    supported_releases=($(distro-info --supported | tr '\r\n' ' '))
+    if [[ ! " ${supported_releases[@]} " =~ " $RELEASE " ]]; then
+        bad_usage "error: '$RELEASE' is not a supported release"
     fi
 
-    local date=$(date +%Y%m%d-%H%m%S)
-    local name=build-$release-$date
-    local log_dir=logs/$release-$date
-
-    mkdir -p "$log_dir"
     trap cleanup EXIT
+    launch_container
 
-    launch_container "$name" "$release"
+    mkdir -p "$LOG_DIR"
+    echo "Beginning builds"
+    echo "---"
 
     for package in "$@"; do
-        setup_container "$name" "$package" "$release"
-        build_package "$name" "$package" "$log_dir"
+        echo "$package"
+
+        lxc restore "$NAME" base_image
+        check_networking "$NAME"
+
+        exec_container sh -c "pull-lp-source $package $RELEASE"
+        if [ $? -ne 0 ]; then
+            echo "skipping: not found in $RELEASE";
+            echo -1 > "$LOG_DIR/$package.result"
+            continue;
+        fi
+
+        build_package "$package"
+
     done
 
 }
 
 main "$@"
+cleanup
 
 # vi: ts=4 expandtab

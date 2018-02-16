@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parse results of build packages script.
 
-Copyright 2017 Canonical Ltd.
+Copyright 2018 Canonical Ltd.
 Joshua Powers <josh.powers@canonical.com>
 """
 import argparse

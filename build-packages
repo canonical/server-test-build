@@ -78,12 +78,10 @@ build_package() {
     exec_container sh -c "$APT_CMD update"
     exec_container sh -c "$APT_CMD build-dep $package"
 
-    set +e
     START=$(date +%s)
     lxc exec "$NAME" -- sh -c "cd $package-*/ && dpkg-buildpackage -j4 -us -uc" &> "$LOG_DIR/$package.log"
     echo $? > "$LOG_DIR/$package.result"
     END=$(date +%s)
-    set -e
 
     echo $((END-START)) > "$LOG_DIR/$package.time"
 }
@@ -111,7 +109,7 @@ main () {
     # Program starts here
     [ $# -gt 1 ] ||
         bad_usage "error: must provide a release and at least one package"
-        
+
     DATE=$(date +%Y%m%d-%H%m%S)
     RELEASE=$1; shift
     NAME=build-$RELEASE-$DATE
@@ -129,8 +127,10 @@ main () {
     echo "Beginning builds"
     echo "---"
 
+    set +e
     for package in "$@"; do
         echo "$package"
+
 
         lxc restore "$NAME" base_image
         check_networking "$NAME"

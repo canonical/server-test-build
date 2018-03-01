@@ -84,6 +84,8 @@ build_package() {
     END=$(date +%s)
 
     echo $((END-START)) > "$LOG_DIR/$package.time"
+
+    echo "$(cat $LOG_DIR/$package.result) took $(cat $LOG_DIR/$package.time) seconds"
 }
 
 main () {
@@ -137,7 +139,7 @@ main () {
 
         exec_container sh -c "pull-lp-source $package $RELEASE"
         if [ $? -ne 0 ]; then
-            echo "skipping: not found in $RELEASE";
+            echo "-1 not found in $RELEASE, skipping";
             echo -1 > "$LOG_DIR/$package.result"
             continue;
         fi

@@ -65,7 +65,7 @@ launch_container() {
     echo 'Upgrading and installing ubuntu-dev-tools'
     exec_container sh -c "$APT_CMD update"
     exec_container sh -c "$APT_CMD upgrade"
-    exec_container sh -c "$APT_CMD install ubuntu-dev-tools"
+    exec_container sh -c "$APT_CMD install timeout ubuntu-dev-tools"
 
     lxc snapshot "$NAME" base_image
 }
@@ -79,7 +79,7 @@ build_package() {
     exec_container sh -c "$APT_CMD build-dep $package"
 
     START=$(date +%s)
-    lxc exec "$NAME" -- sh -c "cd $package-*/ && dpkg-buildpackage -j4 -us -uc" &> "$LOG_DIR/$package.log"
+    lxc exec "$NAME" -- sh -c "cd $package-*/ && timeout 1200 dpkg-buildpackage -j4 -us -uc" &> "$LOG_DIR/$package.log"
     echo $? > "$LOG_DIR/$package.result"
     END=$(date +%s)
 

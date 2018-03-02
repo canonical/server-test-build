@@ -65,7 +65,7 @@ launch_container() {
     echo 'Upgrading and installing ubuntu-dev-tools'
     exec_container sh -c "$APT_CMD update"
     exec_container sh -c "$APT_CMD upgrade"
-    exec_container sh -c "$APT_CMD install timeout ubuntu-dev-tools"
+    exec_container sh -c "$APT_CMD install ubuntu-dev-tools"
 
     lxc snapshot "$NAME" base_image
 }

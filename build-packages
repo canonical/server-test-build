@@ -4,11 +4,24 @@
 # Used to test that packages in the archive are still buildable and do
 # not fail to build (FTBFS).
 #
+# Build Exit Codes
+# ---
+# 124 if command times out
+# 125 if timeout itself fails
+# 126 if command is found but cannot be invoked
+# 127 if command cannot be found
+# 137 if command is sent the KILL(9) signal (128+9)
+# otherwise the exit status of command is used
+#
 # Copyright 2018 Canonical Ltd.
 # Joshua Powers <josh.powers@canonical.com>
 set -eu
 
 APT_CMD="DEBIAN_FRONTEND=noninteractive apt-get --assume-yes"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+LOG_DIR="logs/$TIMESTAMP"
+NAME="build-$TIMESTAMP"
+
 
 error() { echo "$@" 1>&2; }
 
@@ -53,12 +66,14 @@ exec_container() {
 }
 
 launch_container() {
+    local release=$1; shift
+
     if [ "$(lxc list "$NAME" --columns n --format=csv)" == "$NAME" ]; then
         lxc delete --force "$NAME"
     fi
 
-    lxc launch ubuntu-daily:"$RELEASE" "$NAME" ||
-        error "Failed to start '$RELEASE' container named '$NAME'"
+    lxc launch ubuntu-daily:"$release" "$NAME" ||
+        error "Failed to start '$release' container named '$NAME'"
 
     check_networking "$NAME"
 
@@ -72,85 +87,86 @@ launch_container() {
 
 
 build_package() {
-    local package=$1
-    shift
+    local package=$1; shift
 
     exec_container sh -c "$APT_CMD update"
     exec_container sh -c "$APT_CMD build-dep $package"
 
-    START=$(date +%s)
-    lxc exec "$NAME" -- sh -c "cd $package-*/ && timeout 1200 dpkg-buildpackage -j4 -us -uc" &> "$LOG_DIR/$package.log"
-    echo $? > "$LOG_DIR/$package.result"
-    END=$(date +%s)
+    local start="", end=""
+    start=$(date +%s)
 
-    echo $((END-START)) > "$LOG_DIR/$package.time"
+    timeout --foreground 15m lxc exec "$NAME" -- sh -c \
+        "cd $package-*/ && dpkg-buildpackage -j4 -us -uc" \
+        &> "$LOG_DIR/$package.log"
 
-    echo "$(cat $LOG_DIR/$package.result) took $(cat $LOG_DIR/$package.time) seconds"
+    local test_result=$?
+    end=$(date +%s)
+    local test_time=$((end-start))
+
+    echo "$test_time" > "$LOG_DIR/$package.time"
+    echo "$test_result" > "$LOG_DIR/$package.result"
+    echo "$test_result took $test_time seconds"
 }
 
 main () {
     local short_opts="h"
     local long_opts="help"
+
     local getopt_out=""
-    local getopt_out=$(getopt --name "${0##*/}" \
-        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
-        eval set -- "${getopt_out}" || bad_usage
+    if getopt_out=$(getopt --name "${0##*/}" --options "${short_opts}" \
+        --long "${long_opts}" -- "$@"); then
+        eval set -- "${getopt_out}"
+    else
+        bad_usage
+    fi
 
     local cur=""
-    local next=""
-
-        while [ $# -ne 0 ]; do
-            cur="${1:-}"; next="${2:-}";
-            case "$cur" in
-                -h|--help) usage; exit 0;;
-                --) shift; break;;
-            esac
-            shift;
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"
+        case "$cur" in
+            -h|--help) usage; exit 0;;
+            --) shift; break;;
+        esac
+        shift;
     done
 
     # Program starts here
     [ $# -gt 1 ] ||
         bad_usage "error: must provide a release and at least one package"
 
-    DATE=$(date +%Y%m%d-%H%m%S)
-    RELEASE=$1; shift
-    NAME=build-$RELEASE-$DATE
-    LOG_DIR=logs/$RELEASE-$DATE
-
-    supported_releases=($(distro-info --supported | tr '\r\n' ' '))
-    if [[ ! " ${supported_releases[@]} " =~ " $RELEASE " ]]; then
-        bad_usage "error: '$RELEASE' is not a supported release"
+    local release=$1; shift
+    if ! distro-info --supported | grep --quiet "$release"; then
+        bad_usage "error: '$release' is not a supported release"
     fi
 
     trap cleanup EXIT
-    launch_container
+
+    echo "Launching container"
+    launch_container "$release"
 
     mkdir -p "$LOG_DIR"
-    echo "Beginning builds"
+    echo "Starting builds"
     echo "---"
 
-    set +e
     for package in "$@"; do
         echo "$package"
-
-
         lxc restore "$NAME" base_image
         check_networking "$NAME"
 
-        exec_container sh -c "pull-lp-source $package $RELEASE"
-        if [ $? -ne 0 ]; then
-            echo "-1 not found in $RELEASE, skipping";
+        if ! exec_container sh -c "pull-lp-source $package $release"; then
+            echo "-1 not found in $release, skipping";
             echo -1 > "$LOG_DIR/$package.result"
             continue;
         fi
 
+        set +e
         build_package "$package"
-
+        set -e
     done
 
+    cleanup
 }
 
 main "$@"
-cleanup
 
 # vi: ts=4 expandtab

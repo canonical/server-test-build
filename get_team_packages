@@ -24,15 +24,17 @@ def get_packages_from_mapping(team):
     except KeyError:
         return []
 
+
 def main(team):
     """Return packages belonging to a team."""
     packages = get_packages_from_mapping(team)
     for package in packages:
         print(package, end=' ')
 
+
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser()
     PARSER.add_argument('team', help='Team packages to get')
     ARGS = PARSER.parse_args()
 
-main(ARGS.team)
+    main(ARGS.team)

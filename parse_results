@@ -25,6 +25,7 @@ def recursive_glob(search_dir, regex):
 
     return sorted(matches)
 
+
 def read_result(log_path):
     """Read first line of file and return result.
 
@@ -33,6 +34,7 @@ def read_result(log_path):
     """
     with open(log_path, 'r') as log:
         return log.readline().rstrip()
+
 
 def print_results(results):
     """Print results to junit xml file.
@@ -43,7 +45,7 @@ def print_results(results):
     footer = '</testsuite>'
     content = ''
 
-    for package, return_code in results.items():
+    for package, return_code in sorted(results.items()):
         print('%s, %s' % (package, return_code))
         if return_code == "-1":
             content += ('\t<testcase classname="%s" name="build">\n'
@@ -59,6 +61,7 @@ def print_results(results):
     with open(RESULTS_FILENAME, 'w') as out:
         out.write('%s\n%s%s\n' % (header, content, footer))
 
+
 def main(directory):
     """Recursively read directory and print results to junit xml file."""
     results = {}
@@ -68,6 +71,7 @@ def main(directory):
         results[package] = result
 
     print_results(results)
+
 
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser()

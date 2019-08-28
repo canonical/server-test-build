@@ -82,7 +82,7 @@ launch_container() {
     check_networking "$NAME"
     exec_container sh -c "sed -i '/^# deb-src/s/# //' /etc/apt/sources.list"
     exec_container sh -c "$APT_CMD update"
-    exec_container sh -c "$APT_CMD upgrade"
+    exec_container sh -c "$APT_CMD full-upgrade --auto-remove --purge"
     exec_container sh -c "$APT_CMD install ubuntu-dev-tools"
 
     lxc snapshot "$NAME" base_image

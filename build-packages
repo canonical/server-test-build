@@ -78,6 +78,9 @@ launch_container() {
     check_networking "$NAME"
 
     echo 'Upgrading and installing ubuntu-dev-tools'
+    exec_container sh -c "cloud-init status --wait"
+    check_networking "$NAME"
+    exec_container sh -c "sed -i '/^# deb-src/s/# //' /etc/apt/sources.list"
     exec_container sh -c "$APT_CMD update"
     exec_container sh -c "$APT_CMD upgrade"
     exec_container sh -c "$APT_CMD install ubuntu-dev-tools"

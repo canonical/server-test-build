@@ -17,7 +17,7 @@
 # Joshua Powers <josh.powers@canonical.com>
 set -eu
 
-APT_CMD="DEBIAN_FRONTEND=noninteractive apt-get --assume-yes"
+APT_CMD="DEBIAN_FRONTEND=noninteractive eatmydata apt-get --assume-yes"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="logs/$TIMESTAMP"
 NAME="build-$TIMESTAMP"

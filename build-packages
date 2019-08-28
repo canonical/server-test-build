@@ -17,7 +17,7 @@
 # Joshua Powers <josh.powers@canonical.com>
 set -eu
 
-APT_CMD="DEBIAN_FRONTEND=noninteractive apt-get --assume-yes"
+APT_CMD="DEBIAN_FRONTEND=noninteractive eatmydata apt-get -q --assume-yes"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="logs/$TIMESTAMP"
 NAME="build-$TIMESTAMP"
@@ -72,14 +72,17 @@ launch_container() {
         lxc delete --force "$NAME"
     fi
 
-    lxc launch ubuntu-daily:"$release" "$NAME" ||
+    lxc launch ubuntu-daily:"$release" "$NAME" --ephemeral ||
         error "Failed to start '$release' container named '$NAME'"
 
     check_networking "$NAME"
 
     echo 'Upgrading and installing ubuntu-dev-tools'
+    exec_container sh -c "cloud-init status --wait"
+    check_networking "$NAME"
+    exec_container sh -c "sed -i '/^# deb-src/s/# //' /etc/apt/sources.list"
     exec_container sh -c "$APT_CMD update"
-    exec_container sh -c "$APT_CMD upgrade"
+    exec_container sh -c "$APT_CMD full-upgrade --auto-remove --purge"
     exec_container sh -c "$APT_CMD install ubuntu-dev-tools"
 
     lxc snapshot "$NAME" base_image

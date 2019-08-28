@@ -72,7 +72,7 @@ launch_container() {
         lxc delete --force "$NAME"
     fi
 
-    lxc launch ubuntu-daily:"$release" "$NAME" ||
+    lxc launch ubuntu-daily:"$release" "$NAME" --ephemeral ||
         error "Failed to start '$release' container named '$NAME'"
 
     check_networking "$NAME"
